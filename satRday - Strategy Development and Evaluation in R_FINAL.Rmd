@@ -115,7 +115,7 @@ currency('ZAR')
 exchange_rate('USDZAR')
 
 startDate="2010-12-31"
-initEq=100
+initEq=100000
 portfolio.st='macross'
 account.st='macross'
 initPortf(portfolio.st,symbols="USDZAR")
@@ -130,7 +130,7 @@ stratMACROSS <- add.indicator(strategy = stratMACROSS, name = "SMA", arguments =
 stratMACROSS <- add.signal(strategy = stratMACROSS,name="sigCrossover",arguments = list(columns=c("ma50","ma200"), relationship="gte"),label="ma50.gt.ma200")
 stratMACROSS <- add.signal(strategy = stratMACROSS,name="sigCrossover",arguments = list(column=c("ma50","ma200"),relationship="lt"),label="ma50.lt.ma200")
 
-stratMACROSS <- add.rule(strategy = stratMACROSS,name='ruleSignal', arguments = list(sigcol="ma50.gt.ma200",sigval=TRUE, orderqty=100, ordertype='market', orderside='long'),type='enter')
+stratMACROSS <- add.rule(strategy = stratMACROSS,name='ruleSignal', arguments = list(sigcol="ma50.gt.ma200",sigval=TRUE, orderqty=100000, ordertype='market', orderside='long'),type='enter')
 stratMACROSS <- add.rule(strategy = stratMACROSS,name='ruleSignal', arguments = list(sigcol="ma50.lt.ma200",sigval=TRUE, orderqty='all', ordertype='market', orderside='long'),type='exit')
 
 # if you want a long/short Stops and Reverse MA cross strategy, you'd add two more rules for the short side:
@@ -276,7 +276,7 @@ install_github('braverock/quantstrat')
     + Joshua Ulrich
     + Peter Carl
     + Jeff Ryan
-    + Dirk Eddelbeutel
+    + Dirk Eddelbuettel
     + Ross Bennett 
     + and many more package authors and community members
 
