@@ -290,3 +290,6 @@ install_github('braverock/quantstrat')
 " - http://goo.gl/na4u5d
 
 
+source code for this presentation can be found at [github.com/jaymon0703/satRday2017---Quant-Strategy-Dev-and-R-Finance](https://github.com/jaymon0703/satRday2017---Quant-Strategy-Dev-and-R-Finance)
+
+
