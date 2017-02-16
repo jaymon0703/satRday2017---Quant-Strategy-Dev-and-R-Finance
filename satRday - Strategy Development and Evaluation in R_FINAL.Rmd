@@ -1,0 +1,292 @@
+---
+title: "Quantitative Strategy Development in R"
+author: "Jasen Mackie"
+date: "February 18, 2017"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+require(Quandl)
+Quandl.api_key("BwWfWZQzgsAzrtRQa7Rx")
+require(boot)
+require(quantstrat)
+require(quantmod)
+require(TTR)
+require(FinancialInstrument)
+require(knitr)
+require(data.table)
+options(scipen = 999)
+```
+
+## Agenda
+- What is R/Finance
+
+- Prominent packages
+
+- Describe a simplistic trading strategy
+
+- Build and analyse the strategy
+
+- _blotter_ not only for simulation
+
+- Highlight how to install the packages, including those not on CRAN
+
+## What is R/Finance | [www.rinfinance.com](http://www.rinfinance.com/)
+![](image/Capture.png)
+
+## R/Finance packages
+* quantmod 
+    + data management and visualisation including widely used getSymbols() and chartSeries() functions
+* TTR
+    + functions to construct technical indicators used in generating trading signals
+* Financial Instrument
+    + define and store meta-data for tradeable contracts, across any asset class and multiple currencies
+* xts
+    + extensible time-series for extending zoo
+
+## R/Finance packages (contd.)
+* quantstrat
+    + specify, build and backtest quantitative trading and portfolio strategies
+* blotter
+    + transaction infrastructure for defining instruments, transactions, portfolios and accounts for trading systems and simulation
+* PerformanceAnalytics
+    + econometric functions for performance and risk analysis
+* PortfolioAnalytics
+    + portfolio optimisation using complex constraints and objectives
+
+## Sample Strategy | Golden Cross (Moving Average Cross)
+_"The golden cross is a bullish breakout pattern formed from a crossover involving a security's short-term moving average (such as the 15-day moving average) breaking above its long-term moving average (such as 50-day moving average) or resistance level. As long-term indicators carry more weight, the golden cross indicates a bull market on the horizon and is reinforced by high trading volumes."_ - www.investopedia.com
+
+So, let us backtest: 
+
+- USDZAR Gloden Cross strategy
+- with Short-term Moving Average of 50 days
+- and Long-Term Moving Average of 200 days
+
+## Before diving in, visualise the data
+```{r download USDZAR, echo=TRUE}
+USDZAR <- Quandl("CURRFX/USDZAR", type = "xts")$Rate
+names(USDZAR) <- "Close"
+head(USDZAR, n=3)
+tail(USDZAR, n=3)
+```
+
+## quantmod::chartSeries(USDZAR)
+```{r chart USDZAR, echo=TRUE}
+chartSeries(round(USDZAR,4), name="USDZAR", TA=c(addSMA(n=200, 
+                        col='white'), addSMA(n=50, col='red2')))
+```
+
+## Zoom in with subset param
+```{r chart USDZAR subset, echo=TRUE}
+chartSeries(round(USDZAR,4), name="USDZAR", subset="2014::",
+    TA=c(addSMA(n=200), addSMA(n=50, col='blue')), theme='white')
+```
+
+## Basic strategy building blocks
+1. Get the data
+    + Quandl(), getSymbols()
+2. Create your indicator/s
+    + SMA(n=50), SMA(n=200)
+3. Construct your signals
+    + SMA50 crosses above/below SMA200
+4. Build your rules
+    + Buy $100k when SMA50 >= SMA200
+    + Sell "all" when SMA50 < SMA200
+    + using sigCrossover() as opposed to sigThreshold()
+
+```{r quantstrat, include=FALSE}
+require(quantstrat)
+
+###############
+# workaround to xts Date handling, remove later
+ttz<-Sys.getenv('TZ')
+Sys.setenv(TZ='UTC')
+
+suppressWarnings(rm("order_book.macross",pos=.strategy))
+suppressWarnings(rm("account.macross","portfolio.macross",pos=.blotter))
+suppressWarnings(rm("account.st","portfolio.st","stock.str","stratMACROSS",'start_t','end_t'))
+
+USDZAR <- Quandl("CURRFX/USDZAR", type = "xts")$Rate
+names(USDZAR) <- "Close"
+currency('ZAR')
+
+exchange_rate('USDZAR')
+
+startDate="2010-12-31"
+initEq=100
+portfolio.st='macross'
+account.st='macross'
+initPortf(portfolio.st,symbols="USDZAR")
+initAcct(account.st,portfolios=portfolio.st, initEq=initEq)
+initOrders(portfolio=portfolio.st)
+
+stratMACROSS<- strategy(portfolio.st)
+
+stratMACROSS <- add.indicator(strategy = stratMACROSS, name = "SMA", arguments = list(x=quote(Cl(mktdata)), n=50),label= "ma50" )
+stratMACROSS <- add.indicator(strategy = stratMACROSS, name = "SMA", arguments = list(x=quote(Cl(mktdata)[,1]), n=200),label= "ma200")
+
+stratMACROSS <- add.signal(strategy = stratMACROSS,name="sigCrossover",arguments = list(columns=c("ma50","ma200"), relationship="gte"),label="ma50.gt.ma200")
+stratMACROSS <- add.signal(strategy = stratMACROSS,name="sigCrossover",arguments = list(column=c("ma50","ma200"),relationship="lt"),label="ma50.lt.ma200")
+
+stratMACROSS <- add.rule(strategy = stratMACROSS,name='ruleSignal', arguments = list(sigcol="ma50.gt.ma200",sigval=TRUE, orderqty=100, ordertype='market', orderside='long'),type='enter')
+stratMACROSS <- add.rule(strategy = stratMACROSS,name='ruleSignal', arguments = list(sigcol="ma50.lt.ma200",sigval=TRUE, orderqty='all', ordertype='market', orderside='long'),type='exit')
+
+# if you want a long/short Stops and Reverse MA cross strategy, you'd add two more rules for the short side:
+
+# stratMACROSS <- add.rule(strategy = stratMACROSS,name='ruleSignal', arguments = list(sigcol="ma50.lt.ma200",sigval=TRUE, orderqty=-100, ordertype='market', orderside='short'),type='enter')
+# stratMACROSS <- add.rule(strategy = stratMACROSS,name='ruleSignal', arguments = list(sigcol="ma50.gt.ma200",sigval=TRUE, orderqty=100, ordertype='market', orderside='short'),type='exit')
+
+start_t<-Sys.time()
+out<-applyStrategy(strategy=stratMACROSS , portfolios=portfolio.st)
+end_t<-Sys.time()
+print(end_t-start_t)
+
+# start_t<-Sys.time()
+# updatePortf(Portfolio='macross',Dates=paste('::',as.Date(Sys.time()),sep=''))
+# end_t<-Sys.time()
+# print("trade blotter portfolio update:")
+# print(end_t-start_t)
+
+# book    = getOrderBook('macross')
+# stats   = tradeStats('macross')
+# ptstats = perTradeStats('macross')
+# rets    = PortfReturns('macross')
+# txns    = getTxns('macross', "USDZAR")
+
+updatePortf(portfolio.st)
+updateAcct(account.st)
+updateEndEq(account.st)
+
+Account <- account.st
+Portfolio <- portfolio.st
+a <- getAccount(Account)
+p <- getPortfolio(Portfolio)
+equity <- a$summary$End.Eq
+
+Sys.setenv(TZ=ttz)
+
+```
+
+## Visualise Results - chart.Posn()
+```{r, echo=TRUE}
+chart.Posn(Portfolio='macross',Symbol="USDZAR", TA=c("add_SMA(n=50,
+                        col='blue')",'add_SMA(n=200)'))
+```
+
+## Zoom in with zoomChart()
+```{r charts3, echo=TRUE}
+quantmod::zoom_Chart('2006::2010')
+```
+
+## blotter::tradeStats()
+```{r tradeStats1, echo=FALSE}
+stats1 <- as.data.frame(t(tradeStats('macross')[,1:15]))
+stats1[,2] <- stats1[,1]
+stats1[,1] <- rownames(stats1)
+setDT(stats1, keep.rownames = FALSE)
+colnames(stats1) <- c("","")
+stats2 <- as.data.frame(t(tradeStats('macross')[,16:30]))
+stats2[,2] <- stats2[,1]
+stats2[,1] <- rownames(stats2)
+setDT(stats2, keep.rownames = FALSE)
+colnames(stats2) <- c("","")
+stats <- cbind(stats1, stats2)
+textplot(stats, show.rownames = FALSE, show.colnames = FALSE)
+```
+
+## blotter::dailyStats()
+```{r dailyStats1, echo=FALSE}
+stats1 <- as.data.frame(t(dailyStats('macross')[,1:14]))
+stats1[,2] <- stats1[,1]
+stats1[,1] <- rownames(stats1)
+setDT(stats1, keep.rownames = FALSE)
+colnames(stats1) <- c("","")
+stats2 <- as.data.frame(t(dailyStats('macross')[,15:28]))
+stats2[,2] <- stats2[,1]
+stats2[,1] <- rownames(stats2)
+setDT(stats2, keep.rownames = FALSE)
+colnames(stats2) <- c("","")
+stats <- cbind(stats1, stats2)
+textplot(stats, show.rownames = FALSE, show.colnames = FALSE)
+```
+
+## blotter::getTxns()
+```{r getTxns, echo=TRUE}
+tail(getTxns('macross',Symbol = "USDZAR"), n=5)
+```
+
+## charts.PerformanceSummary()
+```{r charts.PerformanceSUmmary1, echo=FALSE}
+charts.PerformanceSummary(ROC(equity), main="Sample Strategy Performance")
+```
+
+## Performance against Benchmark
+```{r charts.PerformanceSUmmary2, echo=FALSE}
+comp <- merge(ROC(equity),ROC(USDZAR))
+colnames(comp) <- c("Sample Strategy","USDZAR")
+#charts.PerformanceSummary(merge(ROC(equity),ROC(USDZAR)), main="Sample Strategy Performance")
+charts.PerformanceSummary(comp, main="Strategy vs Buy-Hold USDZAR Performance")
+```
+
+## What about system performance?
+> - The whole simulation, including downloading 7.5k rows of prices, computing 15k indicators (2 for each day), comparing indicators daily since 1991, entering and exiting trades, storing this info in our environment and updating our portfolio, it all took...
+
+> - 5 secs (on my humble desktop)
+
+> - Running the simulation alone with prices already added to my environment?
+
+> - approx. 1.5 secs
+
+> - That is the power of R and quantstrat
+
+## blotter for production trades
+- _blotter_ is also used widely for post-trade analysis of production trades
+- using _blotter::addTxns()_ we can create a portfolio and have access to the array of powerful trade accounting infrastructure
+- 3 required params
+    + Portfolio - portfolio name pointing to portfolio object, structured with _blotter::initPortf()_
+    + Symbol - instrument identifier for a symbol included in your portfolio
+    + TxnData - xts object containing at least 2 columns with names "TxnQty" & "TxnPrice"
+- see perTradeStats_test.R in _blotter/demo_ on github for an example
+
+## How to install?
+[PerformanceAnalytics](https://cran.r-project.org/web/packages/PerformanceAnalytics/), [PortfolioAnalytics](https://cran.r-project.org/web/packages/PortfolioAnalytics/), [FinancialInstrument](https://cran.r-project.org/web/packages/FinancialInstrument/), [xts](https://cran.r-project.org/web/packages/xts/), [quantmod](https://cran.r-project.org/web/packages/quantmod/) and [TTR](https://cran.r-project.org/web/packages/TTR/) are all on CRAN.
+
+Development of these packages is maintained on github.
+
+You will have to install [blotter](https://github.com/braverock/blotter) and [quantstrat](https://github.com/braverock/quantstrat) from github, including the current latest versions of [xts](https://github.com/joshuaulrich/xts) and [quantmod](https://github.com/joshuaulrich/quantmod).
+
+~~~~
+require(devtools)
+install_github('joshuaulrich/xts')
+install_github('joshuaulrich/quantmod')
+install_github('braverock/blotter')
+install_github('braverock/quantstrat')
+~~~~
+
+## Thanks
+
+- Thank you for listening
+
+- Thank you to my family
+
+- Special thanks to:
+    + Brian Peterson 
+    + Joshua Ulrich
+    + Peter Carl
+    + Jeff Ryan
+    + Dirk Eddelbeutel
+    + Ross Bennett 
+    + and many more package authors and community members
+
+## Resources
+- blotter/demo & quantstrat/demo folders on github
+- Reference manuals on CRAN, where available
+- Joshua Ulrich's blog - http://blog.fosstrading.com/
+- Ilya Kipnis' blog - https://quantstrattrader.wordpress.com/
+- Brian G. Peterson's talk to Cape RUG - https://youtu.be/8qBo0PqRObU
+- Brian G. Peterson, "Developing & Backtesting Systematic Trading Strategies
+" - http://goo.gl/na4u5d
+
+
