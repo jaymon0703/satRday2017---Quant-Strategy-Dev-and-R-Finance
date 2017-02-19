@@ -8,7 +8,7 @@ output: ioslides_presentation
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 require(Quandl)
-Quandl.api_key("BwWfWZQzgsAzrtRQa7Rx")
+#Quandl.api_key("your api key here") # Quandl API key required for >50 calls per day, key is free when simply creating an account
 require(boot)
 require(quantstrat)
 require(quantmod)
